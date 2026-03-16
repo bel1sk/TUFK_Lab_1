@@ -8,7 +8,7 @@ from PyQt6.QtGui import (QAction, QFont, QCloseEvent, QIcon, QKeySequence, QPain
 from PyQt6.QtCore import Qt, QSize, QRect, pyqtSignal, QEvent
 
 from highlighter import SyntaxHighlighter
-from analyzer import CompilerAnalyzer
+from analyzer import LexicalAnalyzer
 
 
 class LineNumberArea(QWidget):
@@ -145,7 +145,7 @@ class CompilerWindow(QMainWindow):
         super().__init__()
         self.current_lang = 'ru'
         self.setAcceptDrops(True)
-        self.analyzer = CompilerAnalyzer()
+        self.analyzer = LexicalAnalyzer()
         
         self.i18n = {
             'ru': {
@@ -205,15 +205,18 @@ class CompilerWindow(QMainWindow):
         
         self.output_tabs = QTabWidget()
         
-        self.results_area = QPlainTextEdit()
-        self.results_area.setReadOnly(True)
-        self.results_area.setFont(QFont("Consolas", 11))
-        self.output_tabs.addTab(self.results_area, "")
+        self.results_table = QTableWidget(0, 4)
+        self.results_table.horizontalHeader().setStretchLastSection(True)
+        self.results_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.results_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.results_table.cellClicked.connect(self.on_lexeme_clicked)
+        self.output_tabs.addTab(self.results_table, "")
         
         self.errors_table = QTableWidget(0, 3)
         self.errors_table.horizontalHeader().setStretchLastSection(True)
         self.errors_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.errors_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.errors_table.cellClicked.connect(self.on_error_clicked)
         self.output_tabs.addTab(self.errors_table, "")
         
         splitter.addWidget(self.output_tabs)
@@ -232,12 +235,13 @@ class CompilerWindow(QMainWindow):
     def wheelEvent(self, event):
         if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
             delta = event.angleDelta().y()
-            font = self.results_area.font()
+            font = self.results_table.font()
             if delta > 0:
                 font.setPointSize(font.pointSize() + 1)
             elif delta < 0:
                 font.setPointSize(max(1, font.pointSize() - 1))
-            self.results_area.setFont(font)
+            self.results_table.setFont(font)
+            self.errors_table.setFont(font)
             event.accept()
         else:
             super().wheelEvent(event)
@@ -401,6 +405,7 @@ class CompilerWindow(QMainWindow):
         self.output_tabs.setTabText(0, self.get_text('results'))
         self.output_tabs.setTabText(1, self.get_text('errors'))
         
+        self.results_table.setHorizontalHeaderLabels([self.get_text('code_col') if self.current_lang == 'ru' else "Code", self.get_text('type_col') if self.current_lang == 'ru' else "Type", self.get_text('lexeme_col') if self.current_lang == 'ru' else "Lexeme", self.get_text('loc_col') if self.current_lang == 'ru' else "Location"])
         self.errors_table.setHorizontalHeaderLabels([self.get_text('row'), self.get_text('col'), self.get_text('error_text')])
         
         self.encoding_label.setText(self.get_text('encoding'))
@@ -461,7 +466,8 @@ class CompilerWindow(QMainWindow):
                 editor.current_file = path
                 editor.is_modified = False
                 self.update_tab_title(self.editor_tabs.currentIndex(), editor)
-                self.results_area.appendPlainText(self.get_text('loaded').format(path))
+                self.results_table.setRowCount(0)
+                self.errors_table.setRowCount(0)
             except Exception as e:
                 QMessageBox.warning(self, "Error", self.get_text('error_open').format(e))
 
@@ -531,20 +537,58 @@ class CompilerWindow(QMainWindow):
         for url in event.mimeData().urls():
             if url.isLocalFile():
                 self.open_file(url.toLocalFile())
-                
+
+    def highlight_in_editor(self, row, start_col, end_col):
+        editor = self.current_editor()
+        if not editor: return
+        doc = editor.document()
+        block = doc.findBlockByNumber(row - 1)
+        if block.isValid():
+            cursor = QTextCursor(block)
+            cursor.setPosition(block.position() + start_col - 1)
+            cursor.setPosition(block.position() + end_col, QTextCursor.MoveMode.KeepAnchor)
+            editor.setTextCursor(cursor)
+            editor.setFocus()
+
+    def on_lexeme_clicked(self, row, col):
+        item_loc = self.results_table.item(row, 3)
+        if item_loc:
+            parts = item_loc.text().replace('(', '').replace(')', '').split(', ')
+            r = int(parts[0].split(': ')[1])
+            c_bounds = parts[1].split(': ')[1].split('-')
+            start_c = int(c_bounds[0])
+            end_c = int(c_bounds[1])
+            self.highlight_in_editor(r, start_c, end_c)
+
+    def on_error_clicked(self, row, col):
+        item_row = self.errors_table.item(row, 0)
+        item_col = self.errors_table.item(row, 1)
+        if item_row and item_col:
+            r = int(item_row.text())
+            c = int(item_col.text())
+            self.highlight_in_editor(r, c, c)
+
     def run_analysis(self):
         editor = self.current_editor()
         if not editor: return
         
         code = editor.toPlainText()
         
-        output_text, errors = self.analyzer.analyze(code)
+        lexemes, errors = self.analyzer.analyze(code)
         
-        self.results_area.setPlainText(output_text)
+        self.results_table.setRowCount(0)
         self.errors_table.setRowCount(0)
+        
+        for i, lex in enumerate(lexemes):
+            self.results_table.insertRow(i)
+            self.results_table.setItem(i, 0, QTableWidgetItem(str(lex.get('code', ''))))
+            self.results_table.setItem(i, 1, QTableWidgetItem(lex.get('type', '')))
+            self.results_table.setItem(i, 2, QTableWidgetItem(lex.get('lexeme', '').replace(' ', '')))
+            loc = f"(Row: {lex.get('row')}, Col: {lex.get('start_col')}-{lex.get('end_col')})"
+            self.results_table.setItem(i, 3, QTableWidgetItem(loc))
         
         for i, error in enumerate(errors):
             self.errors_table.insertRow(i)
             self.errors_table.setItem(i, 0, QTableWidgetItem(str(error.get("row", ""))))
-            self.errors_table.setItem(i, 1, QTableWidgetItem(str(error.get("col", ""))))
+            self.errors_table.setItem(i, 1, QTableWidgetItem(str(error.get("start_col", ""))))
             self.errors_table.setItem(i, 2, QTableWidgetItem(str(error.get("message", ""))))
