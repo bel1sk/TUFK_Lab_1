@@ -33,12 +33,12 @@ pip install PyQt6 pyinstaller
 ### Команды для сборки проекта в исполняемый файл (.exe)
 Используйте терминал в папке проекта `d:/Прога/Py/TUFK`:
 ```bash
-pyinstaller --noconsole --onefile --windowed --name="CompilerEditor_v2" main.py
+pyinstaller --noconsole --onefile --windowed --name="CompilerEditor" main.py
 ```
 
 ### Путь к готовому исполняемому файлу
-После успешной сборки готовый файл будет:
-`dist/CompilerEditor_v2.exe`
+После успешной сборки готовый файл будет находиться по пути:
+`dist/CompilerEditor_v2.exe` относительно корневой папки проекта.
 
 ## Описание интерфейса и функций (руководство пользователя)
 * **Работа с файлами**: Поддерживается создание, открытие, сохранение файлов. Возможен Drag-and-Drop.
