@@ -157,6 +157,7 @@ class CompilerWindow(QMainWindow):
                 'run_act': '&Пуск', 'help_act': '&Справка', 'about': 'О &программе',
                 'new_file': 'Новый файл', 'results': 'Результаты', 'errors': 'Ошибки',
                 'row': 'Строка', 'col': 'Столбец', 'error_text': 'Текст ошибки',
+                'code_col': 'Условный код', 'type_col': 'Тип лексемы', 'lexeme_col': 'Лексема', 'loc_col': 'Местоположение',
                 'save_prompt': 'Документ был изменен.\nСохранить изменения?', 'save_title': 'Сохранение изменений',
                 'loaded': 'Файл загружен: {}', 'error_open': 'Не удалось открыть файл:\n{}',
                 'error_save': 'Не удалось сохранить файл:\n{}',
@@ -173,6 +174,7 @@ class CompilerWindow(QMainWindow):
                 'run_act': '&Run', 'help_act': '&Help', 'about': '&About',
                 'new_file': 'New file', 'results': 'Results', 'errors': 'Errors',
                 'row': 'Row', 'col': 'Column', 'error_text': 'Error Message',
+                'code_col': 'Code', 'type_col': 'Type', 'lexeme_col': 'Lexeme', 'loc_col': 'Location',
                 'save_prompt': 'Document has been modified.\nSave changes?', 'save_title': 'Save Changes',
                 'loaded': 'File loaded: {}', 'error_open': 'Failed to open file:\n{}',
                 'error_save': 'Failed to save file:\n{}',
@@ -405,7 +407,7 @@ class CompilerWindow(QMainWindow):
         self.output_tabs.setTabText(0, self.get_text('results'))
         self.output_tabs.setTabText(1, self.get_text('errors'))
         
-        self.results_table.setHorizontalHeaderLabels([self.get_text('code_col') if self.current_lang == 'ru' else "Code", self.get_text('type_col') if self.current_lang == 'ru' else "Type", self.get_text('lexeme_col') if self.current_lang == 'ru' else "Lexeme", self.get_text('loc_col') if self.current_lang == 'ru' else "Location"])
+        self.results_table.setHorizontalHeaderLabels([self.get_text('code_col'), self.get_text('type_col'), self.get_text('lexeme_col'), self.get_text('loc_col')])
         self.errors_table.setHorizontalHeaderLabels([self.get_text('row'), self.get_text('col'), self.get_text('error_text')])
         
         self.encoding_label.setText(self.get_text('encoding'))
