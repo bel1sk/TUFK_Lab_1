@@ -8,7 +8,7 @@ from PyQt6.QtGui import (QAction, QFont, QCloseEvent, QIcon, QKeySequence, QPain
 from PyQt6.QtCore import Qt, QSize, QRect, pyqtSignal, QEvent
 
 from highlighter import SyntaxHighlighter
-from analyzer import LexicalAnalyzer
+from analyzer import LexicalAnalyzer, SyntaxAnalyzer
 
 
 class LineNumberArea(QWidget):
@@ -214,12 +214,23 @@ class CompilerWindow(QMainWindow):
         self.results_table.cellClicked.connect(self.on_lexeme_clicked)
         self.output_tabs.addTab(self.results_table, "")
         
+        self.errors_tab_widget = QWidget()
+        errors_layout = QVBoxLayout()
+        errors_layout.setContentsMargins(0, 0, 0, 0)
+        self.errors_label = QLabel("Общее количество ошибок: 0")
+        self.errors_label.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+        self.errors_label.setStyleSheet("padding: 5px;")
+        
         self.errors_table = QTableWidget(0, 3)
         self.errors_table.horizontalHeader().setStretchLastSection(True)
         self.errors_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.errors_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.errors_table.cellClicked.connect(self.on_error_clicked)
-        self.output_tabs.addTab(self.errors_table, "")
+        
+        errors_layout.addWidget(self.errors_label)
+        errors_layout.addWidget(self.errors_table)
+        self.errors_tab_widget.setLayout(errors_layout)
+        self.output_tabs.addTab(self.errors_tab_widget, "")
         
         splitter.addWidget(self.output_tabs)
         splitter.setSizes([500, 200])
@@ -408,7 +419,7 @@ class CompilerWindow(QMainWindow):
         self.output_tabs.setTabText(1, self.get_text('errors'))
         
         self.results_table.setHorizontalHeaderLabels([self.get_text('code_col'), self.get_text('type_col'), self.get_text('lexeme_col'), self.get_text('loc_col')])
-        self.errors_table.setHorizontalHeaderLabels([self.get_text('row'), self.get_text('col'), self.get_text('error_text')])
+        self.errors_table.setHorizontalHeaderLabels(["Неверный фрагмент", self.get_text('loc_col'), self.get_text('error_text')])
         
         self.encoding_label.setText(self.get_text('encoding'))
         self.lang_label.setText(self.get_text('lang_status'))
@@ -563,12 +574,14 @@ class CompilerWindow(QMainWindow):
             self.highlight_in_editor(r, start_c, end_c)
 
     def on_error_clicked(self, row, col):
-        item_row = self.errors_table.item(row, 0)
-        item_col = self.errors_table.item(row, 1)
-        if item_row and item_col:
-            r = int(item_row.text())
-            c = int(item_col.text())
-            self.highlight_in_editor(r, c, c)
+        item_loc = self.errors_table.item(row, 1)
+        if item_loc:
+            try:
+                parts = item_loc.text().replace('(', '').replace(')', '').split(', ')
+                r = int(parts[0].split(': ')[1])
+                c = int(parts[1].split(': ')[1].split('-')[0])
+                self.highlight_in_editor(r, c, c)
+            except: pass
 
     def run_analysis(self):
         editor = self.current_editor()
@@ -576,10 +589,22 @@ class CompilerWindow(QMainWindow):
         
         code = editor.toPlainText()
         
-        lexemes, errors = self.analyzer.analyze(code)
+        lexemes, lex_errors = self.analyzer.analyze(code)
+
+        syn_analyzer = SyntaxAnalyzer(lexemes)
+        syn_errors = syn_analyzer.parse()
+        
+        all_errors = lex_errors + syn_errors
         
         self.results_table.setRowCount(0)
         self.errors_table.setRowCount(0)
+        
+        if len(all_errors) == 0:
+            self.errors_label.setText("Ошибок не найдено. Анализ успешно завершен.")
+            self.errors_label.setStyleSheet("padding: 5px; color: green;")
+        else:
+            self.errors_label.setText(f"Общее количество ошибок: {len(all_errors)}")
+            self.errors_label.setStyleSheet("padding: 5px; color: red;")
         
         for i, lex in enumerate(lexemes):
             self.results_table.insertRow(i)
@@ -589,8 +614,9 @@ class CompilerWindow(QMainWindow):
             loc = f"(Row: {lex.get('row')}, Col: {lex.get('start_col')}-{lex.get('end_col')})"
             self.results_table.setItem(i, 3, QTableWidgetItem(loc))
         
-        for i, error in enumerate(errors):
+        for i, error in enumerate(all_errors):
             self.errors_table.insertRow(i)
-            self.errors_table.setItem(i, 0, QTableWidgetItem(str(error.get("row", ""))))
-            self.errors_table.setItem(i, 1, QTableWidgetItem(str(error.get("start_col", ""))))
+            self.errors_table.setItem(i, 0, QTableWidgetItem(str(error.get("lexeme", ""))))
+            loc = f"(Row: {error.get('row', '-')}, Col: {error.get('col', '-')})"
+            self.errors_table.setItem(i, 1, QTableWidgetItem(loc))
             self.errors_table.setItem(i, 2, QTableWidgetItem(str(error.get("message", ""))))
